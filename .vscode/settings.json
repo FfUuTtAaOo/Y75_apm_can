@@ -1,0 +1,15 @@
+{
+    // CMake 基础配置
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.generator": "MinGW Makefiles",
+    "cmake.configureOnOpen": true, // 打开项目时自动运行 CMake 配置
+
+    // 让 C/C++ 插件通过 CMake 获取信息，防止头文件飘红
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.default.intelliSenseMode": "linux-gcc-arm",
+    
+    // 终端配置 (可选，确保使用 PowerShell 或 CMD)
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "cortex-debug.armToolchainPath": "D:/ST/workspace/compiler/arm-gnu-toolchain-15.2.rel1-mingw-w64-x86_64-arm-none-eabi/bin",
+    "cortex-debug.variableUseNaturalFormat": false
+}
