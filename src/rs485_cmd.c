@@ -6,6 +6,7 @@
 #include "filter.h"
 #include <string.h>
 #include "at24c04.h"
+#include "can_cmd.h"
 
 extern uint8_t ether_flag;
 
@@ -36,9 +37,6 @@ static void respond(uint8_t cmd, const uint8_t *data, uint16_t len)
 {
     rs485_send_frame((uint8_t)(cmd | RS485_RESP_FLAG), data, len);
 }
-
-/* Send a single-byte ACK response */
-static void ack(uint8_t cmd) { respond(cmd, NULL, 0); }
 
 /* Map a baud-rate code (1..5) to the actual baud rate.
  * Returns 0 when the code is not one of the supported values. */
@@ -104,13 +102,44 @@ static int fmt_float(char *dst, int max, float v)
     return n;
 }
 
-/* Persist the data output unit (1 = kg, 2 = N) at DATA_FORMAT_ADDR so it
-   survives a power cycle.  Only 0x33 and 0x35 store a value; any other
-   content in that byte makes the firmware fall back to 2 (N) on boot. */
+/* Persist the data output unit (1 = kg, 2 = N) at EE_ADDR_DATA_FORMAT (0x7C)
+   so it survives a power cycle.  Only 0x33 and 0x35 store a value; on boot,
+   any other content in that byte (e.g. blank 0xFF) makes the firmware fall
+   back to 2 (N). */
 static void data_format_save(uint8_t fmt)
 {
-    // uint8_t v = fmt;
-    // at24c04_write(DATA_FORMAT_ADDR, &v, 1);
+    BSP_EEPROM_WriteByte(EE_ADDR_DATA_FORMAT, fmt);
+}
+
+/* Persist the CAN command-channel ID at EE_ADDR_CAN_ID (0x98/0x99),
+   big-endian: 0x98 = high byte, 0x99 = low byte. */
+static void can_id_save(uint16_t id)
+{
+    BSP_EEPROM_WriteByte(EE_ADDR_CAN_ID,      (uint8_t)(id >> 8));   /* 高字节 */
+    BSP_EEPROM_WriteByte(EE_ADDR_CAN_ID + 1,  (uint8_t)(id));        /* 低字节 */
+}
+
+void eeprom_config_load(void)
+{
+    uint8_t  fmt;
+    uint8_t  ee[2];
+    uint16_t id;
+
+    /* Data unit: only 1 (kg) and 2 (N) are valid; blank/other -> 2 (N) */
+    fmt = BSP_EEPROM_ReadByte(EE_ADDR_DATA_FORMAT);
+    if (fmt == 1U || fmt == 2U) {
+        g_sys.data_format = fmt;
+    } else {
+        g_sys.data_format = 2U;
+    }
+
+    /* CAN ID: valid range 1..0x7FF (11-bit standard ID); blank/other -> default.
+       大端存储：ee[0] = 高字节，ee[1] = 低字节 */
+    BSP_EEPROM_ReadBytes(EE_ADDR_CAN_ID, ee, 2);
+    id = (uint16_t)(((uint16_t)ee[0] << 8) | (uint16_t)ee[1]);
+    if (id >= 1U && id <= 0x7FFU) {
+        g_can_id_cmd = id;
+    }
 }
 
 /* Apply a new baud rate: save it to EEPROM, then re-init USART1 and restart
@@ -194,9 +223,14 @@ void rs485_send_data_frame(uint8_t cmd)
 }
 
 /* ================================================================
- *  rs485_cmd_dispatch
+ *  cmd_dispatch — 与传输方式无关的命令处理核心
  * ================================================================ */
-void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
+static void tx_ack(const cmd_transport_t *tx, uint8_t cmd)
+{
+    tx->respond(cmd, NULL, 0);
+}
+
+void cmd_dispatch(const cmd_transport_t *tx, uint8_t cmd, const uint8_t *payload, uint16_t len)
 {
     uint8_t buf[150];   /* enough for 144-byte matrix ack */
 
@@ -205,20 +239,21 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
     /* ---- 0x01  Stop continuous send ---- */
     case RS485_CMD_STOP:
         g_sys.send_mode = 0;
-        ack(cmd);
+        tx_ack(tx, cmd);
         break;
 
     /* ---- 0x02  Start continuous send ---- */
     case RS485_CMD_START:
-        g_sys.send_mode = 1;
-        ack(cmd);
+        g_sys.send_mode = tx->continuous_mode;
+        tx_ack(tx, cmd);
         break;
 
     /* ---- 0x03  Single-shot request ---- */
     case RS485_CMD_SINGLE:
-        /* AA 55 03 [6×float32] 0D 0A — same payload as the 0x02 stream,
-           only the command byte differs so the host can tell them apart. */
-        rs485_send_data_frame(RS485_CMD_SINGLE);
+        /* AA 55 03 [6×float32] 0D 0A (RS485)
+           0x101 / 0x102 / 0x103 三帧 (CAN)
+           — 内容与 0x02 连续流一致，只是命令字节不同，便于上位机区分。 */
+        tx->send_force(RS485_CMD_SINGLE);
         break;
 
     /* ---- 0x04  Set baud rate: AA 55 04 [code] 0D 0A ---- */
@@ -228,7 +263,7 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
         baud = baud_from_code(payload[0]);
         if (baud == 0U) { g_sys.comm_error_cnt++; break; }   /* invalid code */
 
-        ack(cmd);               /* ACK first, at the OLD baud rate          */
+        tx_ack(tx, cmd);               /* ACK first, at the OLD baud rate          */
         apply_baud(baud);       /* persist + re-init USART1 at the new rate */
         break;
     }
@@ -237,12 +272,28 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
     case RS485_CMD_SET_FREQ:
         if (len < 1) { g_sys.comm_error_cnt++; break; }
         g_sys.freq_mode = (payload[0] == 0) ? 0U : 1U;
-        ack(cmd);
+        tx_ack(tx, cmd);
         break;
+
+    /* ---- 0x09  Set CAN ID: AA 55 09 [id_hi] [id_lo] 0D 0A ----
+       参数为 2 字节 ID，**高字节在前**（大端），有效范围 1..0x7FF。
+       CAN 帧：09 00 02 00 00 00 00 00 -> data[0]=命令码, data[1..2]=ID。
+       应答先用旧 ID 发出，再写 EEPROM (0x98/0x99) 并切换到新 ID。 */
+    case RS485_CMD_SET_CAN_ID: {
+        uint16_t id;
+        if (len < 2) { g_sys.comm_error_cnt++; break; }
+        id = (uint16_t)(((uint16_t)payload[0] << 8) | (uint16_t)payload[1]);
+        if (id < 1U || id > 0x7FFU) { g_sys.comm_error_cnt++; break; }
+
+        tx_ack(tx, cmd);        /* ACK 仍以旧 ID 发出 */
+        can_id_save(id);        /* 保存到 EEPROM，约 2 个 5ms 写入周期 */
+        g_can_id_cmd = id;      /* 切换到新 ID（收命令 + 发应答同时生效） */
+        break;
+    }
 
     /* ---- 0x05  Query serial number ---- */
     case RS485_CMD_QUERY_SN:
-        original_send((const uint8_t *)g_config.sn, (uint16_t)strlen(g_config.sn));
+        tx->send_text((const uint8_t *)g_config.sn, (uint16_t)strlen(g_config.sn));
         break;
 
     /* ---- 0x06  Query firmware version ---- */
@@ -250,7 +301,7 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
         buf[0] = (uint8_t)(g_config.fw_version >> 16);
         buf[1] = (uint8_t)(g_config.fw_version >> 8);
         buf[2] = (uint8_t)(g_config.fw_version);
-        respond(cmd, buf, 3);
+        tx->respond(cmd, buf, 3);
         break;
 
     /* ---- 0x07  Query system status ---- */
@@ -263,31 +314,31 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
         buf[5] = (uint8_t)(g_sys.status_flags >> 8);
         buf[6] = (uint8_t)(g_sys.comm_error_cnt);
         buf[7] = (uint8_t)(g_sys.comm_error_cnt >> 8);
-        respond(cmd, buf, 8);
+        tx->respond(cmd, buf, 8);
         break;
 
     /* ---- 0x30  Zero calibration (20-point force average) ---- */
     case RS485_CMD_ZERO:
         calib_zero_start();
         g_sys.zero_calib_busy = 1;
-        ack(cmd);
+        tx_ack(tx, cmd);
         break;
 
     case RS485_CMD_HEX_SEND:
         g_sys.debug_mode = 0;
-        ack(cmd);
+        tx_ack(tx, cmd);
         break;
 
     case RS485_CMD_ASC_SEND:
         g_sys.debug_mode = 1;
-        ack(cmd);
+        tx_ack(tx, cmd);
         break;
 
     /* ---- 0x36  Cancel zero ---- */
     case RS485_CMD_UNZERO:
         calib_zero_cancel();
         // flash_save_zero();
-        ack(cmd);
+        tx_ack(tx, cmd);
         break;
 
 
@@ -323,7 +374,7 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
             }
             /* Plain text, no AA 55 header — same style as the 0x05 SN query,
                so the output is readable as-is in a terminal. */
-            original_send((const uint8_t *)line, (uint16_t)n);
+            tx->send_text((const uint8_t *)line, (uint16_t)n);
         }
         break;
     }
@@ -332,7 +383,7 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
     case RS485_CMD_SET_FORMAT:
         g_sys.data_format = 0;
         FloatFilter_Init();
-        ack(cmd);
+        tx_ack(tx, cmd);
         break;
 
     /* ---- 0x33  Set data format: kg (persisted) ---- */
@@ -340,7 +391,7 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
         g_sys.data_format = 1;
         data_format_save(1);
         FloatFilter_Init();
-        ack(cmd);
+        tx_ack(tx, cmd);
         break;
 
     /* ---- 0x35  Set data format: N (persisted) ---- */
@@ -348,7 +399,7 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
         g_sys.data_format = 2;
         data_format_save(2);
         FloatFilter_Init();
-        ack(cmd);
+        tx_ack(tx, cmd);
         break;
 
     /* ---- 0x20  Upload decoupling matrix (6×6 × 4 = 144 bytes) ---- */
@@ -358,7 +409,7 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
             g_matrix.m[payload[0]][i] = le_to_float(payload + 1 + i * 4);
         }
         flash_save_matrix(payload[0]);
-        ack(cmd | payload[0]);
+        tx_ack(tx, (uint8_t)(cmd | payload[0]));
         break;
 
     /* ---- 0x35  Debug mode toggle ---- */
@@ -373,4 +424,19 @@ void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
         g_sys.comm_error_cnt++;
         break;
     }
+}
+
+/* ================================================================
+ *  rs485_cmd_dispatch — RS485 通道（AA 55 ... 0D 0A）
+ * ================================================================ */
+static const cmd_transport_t g_rs485_transport = {
+    .respond         = respond,
+    .send_force      = rs485_send_data_frame,
+    .send_text       = original_send,
+    .continuous_mode = 1,          /* g_sys.send_mode = 1 -> RS485 连续发送 */
+};
+
+void rs485_cmd_dispatch(uint8_t cmd, const uint8_t *payload, uint16_t len)
+{
+    cmd_dispatch(&g_rs485_transport, cmd, payload, len);
 }

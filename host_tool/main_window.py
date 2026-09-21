@@ -153,8 +153,10 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.addWidget(QLabel("数据:"))
         self.hex_edits = []
-        for _ in range(8):
-            e = QLineEdit("00")
+        # 默认 "03 00 00 00 00 00 00 00" = 单次读取六维力
+        default_bytes = ["03", "00", "00", "00", "00", "00", "00", "00"]
+        for i in range(8):
+            e = QLineEdit(default_bytes[i])
             e.setFixedWidth(30)
             e.setAlignment(Qt.AlignCenter)
             e.setValidator(QRegularExpressionValidator(
@@ -179,7 +181,11 @@ class MainWindow(QMainWindow):
         row2.addStretch(1)
         lay.addLayout(row2)
 
-        tip = QLabel("说明: 发送后设备收到 0x201 指令，回传 0x101/0x102/0x103 三帧六维力数据。")
+        tip = QLabel(
+            "说明: data[0]=命令码, 参数从 data[1] 起(高字节在前)。\n"
+            "  03=单次读取  01=停止  02=连续发送  04 00 01=波特率460800\n"
+            "  06=查版本  07=查状态  09 00 02=修改CAN ID为0x0002\n"
+            "  33=kg  35=N(均存EEPROM)  30=校零  36=取消校零")
         tip.setWordWrap(True)
         tip.setStyleSheet("color:#888; font-size:11px;")
         lay.addWidget(tip)

@@ -22,6 +22,7 @@ extern "C" {
 #define RS485_CMD_QUERY_VER     0x06  /* Query firmware version              */
 #define RS485_CMD_QUERY_STATUS  0x07  /* Query system status                 */
 #define RS485_CMD_SET_FREQ      0x08  /* Set frequency: 0=500Hz, 1=1000Hz    */
+#define RS485_CMD_SET_CAN_ID    0x09  /* Set CAN ID: AA 55 09 [hi] [lo] 0D 0A */
 #define RS485_CMD_ZERO          0x30  /* Zero calibration (set offsets)      */
 #define RS485_CMD_UNZERO        0x36  /* Cancel zero (clear offsets)         */
 #define RS485_CMD_QUERY_MATRIX  0x37  /* Query the 6×6 matrix (144 bytes)    */
@@ -41,6 +42,12 @@ extern "C" {
 #define RS485_CMD_SET_MATRIX    0x20  /* Upload decoupling matrix (144 bytes) */
 #define RS485_CMD_DEBUG_MODE    0x35  /* Toggle debug mode                   */
 
+/** @name EEPROM (AT24C04) 配置参数保存地址 */
+/*@{*/
+#define EE_ADDR_DATA_FORMAT     0x7C  /* 单位 kg(1)/N(2)，1 字节             */
+#define EE_ADDR_CAN_ID          0x98  /* CAN ID，2 字节大端 (0x98 高, 0x99 低)*/
+/*@}*/
+
 /** @name Baud-rate codes — payload byte of RS485_CMD_SET_BAUD (AA 55 04 [code] 0D 0A) */
 /*@{*/
 #define RS485_BAUD_460800       0x01  /* 460800 bps                          */
@@ -57,6 +64,36 @@ extern "C" {
 /** @name Response flag (OR-ed with command code in response frame) */
 #define RS485_RESP_FLAG         0x80  /* AA 55 [CMD|0x80] [DATA] 0D 0A       */
 
+/* ================================================================
+ *  与传输方式无关的命令分发
+ *
+ *  同一套命令码同时跑在 RS485 和 CAN 上，差别只在"怎么把结果发出去"，
+ *  因此把输出动作抽象成一个 transport，命令处理逻辑只有一份。
+ * ================================================================ */
+typedef struct {
+    /* 应答帧：RS485 -> AA 55 [cmd|0x80] [data] 0D 0A
+                CAN   -> 8 字节，[cmd|0x80] 在 data[0]，数据紧跟其后，
+                         左对齐、尾部补 0 */
+    void (*respond)(uint8_t cmd, const uint8_t *data, uint16_t len);
+    /* 输出六维力：RS485 -> AA 55 [cmd] [6×float32] 0D 0A
+                   CAN   -> 0x101 / 0x102 / 0x103 三帧 */
+    void (*send_force)(uint8_t cmd);
+    /* 纯文本输出（序列号、矩阵文本等） */
+    void (*send_text)(const uint8_t *data, uint16_t len);
+    /* 收到"启动连续发送"时写入 g_sys.send_mode 的值（1=RS485, 2=CAN） */
+    uint8_t continuous_mode;
+} cmd_transport_t;
+
+/**
+ * 命令分发核心，RS485 与 CAN 共用。
+ *
+ * @param tx      输出通道（RS485 或 CAN）
+ * @param cmd     命令码
+ * @param payload 参数区（不含命令码）
+ * @param len     参数长度
+ */
+void cmd_dispatch(const cmd_transport_t *tx, uint8_t cmd, const uint8_t *payload, uint16_t len);
+
 /**
  * Send one data frame carrying the current 6-axis values.
  *
@@ -69,6 +106,13 @@ extern "C" {
  *             or   RS485_CMD_SINGLE (0x03) for a single-shot reply.
  */
 void rs485_send_data_frame(uint8_t cmd);
+
+/**
+ * 上电时从 EEPROM 恢复持久化配置（在 I2C 初始化之后、CAN 初始化之前调用）：
+ *   - 0x7C：数据单位（1=kg, 2=N；其它值视为空白，默认 2=N）
+ *   - 0x98：CAN 命令通道 ID（2 字节小端，有效范围 1..0x7FF，非法则保持默认 0x201）
+ */
+void eeprom_config_load(void);
 
 /**
  * Dispatch an incoming RS485 command.

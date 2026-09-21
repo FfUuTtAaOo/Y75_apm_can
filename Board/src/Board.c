@@ -168,62 +168,62 @@ void I2C_Init(void)
 
 //I2C1
     /* Enable I2C related Clock */
-   RCM_EnableAPB2PeriphClock(RCM_APB2_PERIPH_GPIOB | RCM_APB2_PERIPH_AFIO);
-   RCM_EnableAPB1PeriphClock(RCM_APB1_PERIPH_I2C1);
-//    GPIO_ConfigPinRemap(GPIO_REMAP_I2C1);
+//    RCM_EnableAPB2PeriphClock(RCM_APB2_PERIPH_GPIOB | RCM_APB2_PERIPH_AFIO);
+//    RCM_EnableAPB1PeriphClock(RCM_APB1_PERIPH_I2C1);
+// //    GPIO_ConfigPinRemap(GPIO_REMAP_I2C1);
 
-   /* Free I2C_SCL and I2C_SDA */
-   GPIO_ConfigStruct.mode = GPIO_MODE_AF_OD;
-   GPIO_ConfigStruct.speed = GPIO_SPEED_50MHz;
-   GPIO_ConfigStruct.pin = GPIO_PIN_6;
-   GPIO_Config(GPIOB, &GPIO_ConfigStruct);
+//    /* Free I2C_SCL and I2C_SDA */
+//    GPIO_ConfigStruct.mode = GPIO_MODE_AF_OD;
+//    GPIO_ConfigStruct.speed = GPIO_SPEED_50MHz;
+//    GPIO_ConfigStruct.pin = GPIO_PIN_6;
+//    GPIO_Config(GPIOB, &GPIO_ConfigStruct);
 
-   GPIO_ConfigStruct.mode = GPIO_MODE_AF_OD;
-   GPIO_ConfigStruct.speed = GPIO_SPEED_50MHz;
-   GPIO_ConfigStruct.pin = GPIO_PIN_7;
-   GPIO_Config(GPIOB, &GPIO_ConfigStruct);
+//    GPIO_ConfigStruct.mode = GPIO_MODE_AF_OD;
+//    GPIO_ConfigStruct.speed = GPIO_SPEED_50MHz;
+//    GPIO_ConfigStruct.pin = GPIO_PIN_7;
+//    GPIO_Config(GPIOB, &GPIO_ConfigStruct);
 
-   /* Config I2C1 */
-   I2C_Reset(I2C1);
-   I2C_ConfigStruct.mode = I2C_MODE_I2C;
-   I2C_ConfigStruct.dutyCycle = I2C_DUTYCYCLE_2;
-   I2C_ConfigStruct.ackAddress = I2C_ACK_ADDRESS_7BIT;
-   I2C_ConfigStruct.ownAddress1 = 0x0;
-   I2C_ConfigStruct.ack = I2C_ACK_ENABLE;
-   I2C_ConfigStruct.clockSpeed = 400000;
-   I2C_Config(I2C1,&I2C_ConfigStruct);
+//    /* Config I2C1 */
+//    I2C_Reset(I2C1);
+//    I2C_ConfigStruct.mode = I2C_MODE_I2C;
+//    I2C_ConfigStruct.dutyCycle = I2C_DUTYCYCLE_2;
+//    I2C_ConfigStruct.ackAddress = I2C_ACK_ADDRESS_7BIT;
+//    I2C_ConfigStruct.ownAddress1 = 0x0;
+//    I2C_ConfigStruct.ack = I2C_ACK_ENABLE;
+//    I2C_ConfigStruct.clockSpeed = 400000;
+//    I2C_Config(I2C1,&I2C_ConfigStruct);
 
-   /* Enable I2Cx */
-   I2C_Enable(I2C1);
+//    /* Enable I2Cx */
+//    I2C_Enable(I2C1);
     
 //I2C2
-    // /* Enable I2C related Clock */
-    // RCM_EnableAPB2PeriphClock(RCM_APB2_PERIPH_GPIOB | RCM_APB2_PERIPH_AFIO);
-    // RCM_EnableAPB1PeriphClock(RCM_APB1_PERIPH_I2C2);
+    /* Enable I2C related Clock */
+    RCM_EnableAPB2PeriphClock(RCM_APB2_PERIPH_GPIOB | RCM_APB2_PERIPH_AFIO);
+    RCM_EnableAPB1PeriphClock(RCM_APB1_PERIPH_I2C2);
 
-    // /* Free I2C_SCL and I2C_SDA */
-    // GPIO_ConfigStruct.mode = GPIO_MODE_AF_OD;
-    // GPIO_ConfigStruct.speed = GPIO_SPEED_50MHz;
-    // GPIO_ConfigStruct.pin = GPIO_PIN_10;
-    // GPIO_Config(GPIOB, &GPIO_ConfigStruct);
+    /* Free I2C_SCL and I2C_SDA */
+    GPIO_ConfigStruct.mode = GPIO_MODE_AF_OD;
+    GPIO_ConfigStruct.speed = GPIO_SPEED_50MHz;
+    GPIO_ConfigStruct.pin = GPIO_PIN_10;
+    GPIO_Config(GPIOB, &GPIO_ConfigStruct);
 
-    // GPIO_ConfigStruct.mode = GPIO_MODE_AF_OD;
-    // GPIO_ConfigStruct.speed = GPIO_SPEED_50MHz;
-    // GPIO_ConfigStruct.pin = GPIO_PIN_11;
-    // GPIO_Config(GPIOB, &GPIO_ConfigStruct);
+    GPIO_ConfigStruct.mode = GPIO_MODE_AF_OD;
+    GPIO_ConfigStruct.speed = GPIO_SPEED_50MHz;
+    GPIO_ConfigStruct.pin = GPIO_PIN_11;
+    GPIO_Config(GPIOB, &GPIO_ConfigStruct);
 
-    // /* Config I2C1 */
-    // I2C_Reset(I2C2);
-    // I2C_ConfigStruct.mode = I2C_MODE_I2C;
-    // I2C_ConfigStruct.dutyCycle = I2C_DUTYCYCLE_2;
-    // I2C_ConfigStruct.ackAddress = I2C_ACK_ADDRESS_7BIT;
-    // I2C_ConfigStruct.ownAddress1 = 0xA0;
-    // I2C_ConfigStruct.ack = I2C_ACK_ENABLE;
-    // I2C_ConfigStruct.clockSpeed = 400000;
-    // I2C_Config(I2C2,&I2C_ConfigStruct);
+    /* Config I2C1 */
+    I2C_Reset(I2C2);
+    I2C_ConfigStruct.mode = I2C_MODE_I2C;
+    I2C_ConfigStruct.dutyCycle = I2C_DUTYCYCLE_2;
+    I2C_ConfigStruct.ackAddress = I2C_ACK_ADDRESS_7BIT;
+    I2C_ConfigStruct.ownAddress1 = 0xA0;
+    I2C_ConfigStruct.ack = I2C_ACK_ENABLE;
+    I2C_ConfigStruct.clockSpeed = 400000;
+    I2C_Config(I2C2,&I2C_ConfigStruct);
 
-    // /* Enable I2Cx */
-    // I2C_Enable(I2C2);
+    /* Enable I2Cx */
+    I2C_Enable(I2C2);
 }
 
 void USART1_RX_DMA_Init(void)

@@ -33,7 +33,7 @@
 #include "flash_storage.h"
 #include "rs485.h"
 #include "calibration.h"
-#include "apm32f10x_int.h"
+#include "can_cmd.h"
 #include "at24c04.h"
 
 #define ADC_DATA_BUFF_LEN       64
@@ -45,15 +45,11 @@ volatile sensor_data_t   g_sensor;
 volatile system_state_t  g_sys;
 config_t                 g_config = {
     .sn         = "HS-01234567",
-    .fw_version = 0x00010701,
+    .fw_version = 0x00010000,
 };
 decouple_matrix_t        g_matrix;
 
 uint8_t output_interface = 0;
-
-extern uint8_t can_rx_data[CAN_DATA_LENGTH];
-uint8_t can_rx_usr_count = 0;
-extern uint8_t can_rx_int_count;
 
 static uint32_t g_last_rs485_send_ms;
 volatile uint32_t g_tick_ms = 0;
@@ -132,7 +128,6 @@ static void adc_data_proc(float data[6])
 }
 
 uint8_t hex_buf_send[256] = { 0 };
-uint8_t can_buf_send[24] = { 0 };
 
 #define HEX_BUF_SEND_OFFSET 1
 
@@ -180,78 +175,6 @@ static void rs485_send_continuous(void)
     }
 }
 
-static void can_process(void)
-{
-    if (can_rx_usr_count != can_rx_int_count) {
-        can_rx_usr_count = can_rx_int_count;
-        switch (can_rx_data[7]) {
-        case GM_STOP_COMMAND:
-            g_sys.send_mode = 0;
-            can_rx_data[7] = 0x00;
-            break;
-
-        case CONTINUE_DATA_SEND:
-            g_sys.send_mode = 2;
-            can_rx_data[7] = 0x00;
-            break;
-
-        case ZERO_CLEARING:
-            calib_zero_start();
-            g_sys.zero_calib_busy = 1;
-            for (uint8_t i = 0; i < CAN_DATA_LENGTH; i++) {
-                txMsg[CAN_TX_CMD].data[i] = ZERO_CLEARING;
-            }
-            CAN_TxMessage(CAN1, &txMsg[CAN_TX_CMD]);
-            can_rx_data[7] = 0x00;
-            break;
-
-        case FILTERED_DATA:
-            g_sys.data_format = 1;
-            FloatFilter_Init();
-            for (uint8_t i = 0; i < CAN_DATA_LENGTH; i++) {
-                txMsg[CAN_TX_CMD].data[i] = FILTERED_DATA;
-            }
-            CAN_TxMessage(CAN1, &txMsg[CAN_TX_CMD]);
-            can_rx_data[7] = 0x00;
-            break;
-
-        case FILTERED_DATA_N:
-            g_sys.data_format = 2;
-            FloatFilter_Init();
-            for (uint8_t i = 0; i < CAN_DATA_LENGTH; i++) {
-                txMsg[CAN_TX_CMD].data[i] = FILTERED_DATA_N;
-            }
-            CAN_TxMessage(CAN1, &txMsg[CAN_TX_CMD]);
-            can_rx_data[7] = 0x00;
-            break;
-        }
-    }
-}
-
-static void can_send_continuous(void)
-{
-    int i = 0, j = 0;
-    for (i = 0; i < 6; i++) {
-        float f = g_sensor.force[i];   /* read volatile once */
-        uint32_t u; memcpy(&u, &f, 4);
-        can_buf_send[i * 4 + 0] = (uint8_t)(u);
-        can_buf_send[i * 4 + 1] = (uint8_t)(u >> 8);
-        can_buf_send[i * 4 + 2] = (uint8_t)(u >> 16);
-        can_buf_send[i * 4 + 3] = (uint8_t)(u >> 24);
-    }
-
-    for (i = 0; i < CAN_DATA_LENGTH; i++) {
-        for (j = 0; j < 3; j++) {
-            txMsg[j].data[i] = can_buf_send[j * 8 + i];
-        }
-    }
-    CAN_TxMessage(CAN1, &txMsg[CAN_TX_FORCE]);
-    Delay(1);
-    CAN_TxMessage(CAN1, &txMsg[CAN_TX_MOMENT]);
-    Delay(1);
-    CAN_TxMessage(CAN1, &txMsg[CAN_TX_FYFZ]);
-}
-
 int main(void)
 {
     /* System clocks configuration */
@@ -263,6 +186,10 @@ int main(void)
     SPI1_Init();
     TIM2_Init();
     I2C_Init();
+
+    /* 从 EEPROM 恢复单位 (0x7C) 与 CAN ID (0x98)，须在 CAN 中断使能前完成 */
+    eeprom_config_load();
+
     CAN_Init();
 
     USART_EnableDMA(USART1, USART_DMA_RX);
@@ -281,6 +208,14 @@ int main(void)
 //test
     memcpy(asc_buff, "Init OK", 7);
     asc_send(asc_buff, 7);
+
+    /* 上电完成通知：CAN ID 0x201，数据 00 01 02 03 04 05 06 07 */
+    {
+        static const uint8_t power_on_frame[CAN_DATA_LENGTH] = {
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
+        };
+        can_cmd_send_frame(g_can_id_cmd, power_on_frame);
+    }
 
     TMR_Enable(TMR2);
 
@@ -315,14 +250,14 @@ int main(void)
         if (g_sys.send_mode == 1) {
             rs485_send_continuous();
         } else if (g_sys.send_mode == 2) {
-            can_send_continuous();
+            can_cmd_send_continuous();
         } else {
             g_last_rs485_send_ms = g_tick_ms;   /* reset timer on stop */
         }
         
         rs485_process();
 
-        can_process();
+        can_cmd_process();
     }
 }
 

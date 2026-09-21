@@ -8,7 +8,7 @@
             "servertype": "openocd",
             "serverpath": "D:/ST/workspace/compiler/xpack-openocd-0.12.0-5/bin/openocd.exe",
             "cwd": "${workspaceFolder}",
-            "executable": "${workspaceFolder}/build/huaweike.elf",
+            "executable": "${workspaceFolder}/build/Y75_apm_can.elf",
             
             // 调试器接口与芯片
             "device": "APM32F103CBT6",

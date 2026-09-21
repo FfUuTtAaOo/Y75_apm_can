@@ -28,14 +28,13 @@
 #include "apm32f10x_int.h"
 #include "lha7668-8.h"
 #include "rs485.h"
+#include "can_cmd.h"
 
 extern volatile uint32_t g_tick_ms;
 extern uint32_t adc_data_buff[64][6];
 extern uint8_t adc_data_int_count;
 
 extern CAN_RxMessage_T rxMsg;
-uint8_t can_rx_data[CAN_DATA_LENGTH] = { 0 };
-uint8_t can_rx_int_count = 0;
 
 /** @addtogroup Examples
   @{
@@ -221,9 +220,8 @@ void USART1_IRQHandler(void)
 void CAN1_RX0_ISR(void)
 {
     CAN_RxMessage(CAN1, CAN_RX_FIFO_0, &rxMsg);
-    if (rxMsg.stdID == 0x201) {
-        can_rx_int_count++;
-        memcpy(can_rx_data, rxMsg.data, CAN_DATA_LENGTH);
+    if (rxMsg.stdID == g_can_id_cmd) {
+        can_rx_frame_isr(rxMsg.data, (uint8_t)rxMsg.dataLengthCode);
     }
 }
 

@@ -53,7 +53,7 @@ extern "C" {
 #define EEPROM_I2C_SPEED        100000
 
 /** I2C1 外设 */
-#define EEPROM_I2C              I2C1
+#define EEPROM_I2C              I2C2
 
 /** AT24C04 设备基础地址（7 位地址左移 1 位后的 8 位值，不含 P0 位） */
 #define AT24C04_BASE_ADDR       0xA0
@@ -70,13 +70,13 @@ extern "C" {
 /* ---- I2C1 引脚 ---- */
 #define EEPROM_SCL_GPIO_PORT    GPIOB
 #define EEPROM_SCL_GPIO_CLK     RCM_APB2_PERIPH_GPIOB
-#define EEPROM_SCL_PIN          GPIO_PIN_6
+#define EEPROM_SCL_PIN          GPIO_PIN_10
 
 #define EEPROM_SDA_GPIO_PORT    GPIOB
 #define EEPROM_SDA_GPIO_CLK     RCM_APB2_PERIPH_GPIOB
-#define EEPROM_SDA_PIN          GPIO_PIN_7
+#define EEPROM_SDA_PIN          GPIO_PIN_11
 
-#define EEPROM_I2C_CLK          RCM_APB1_PERIPH_I2C1
+#define EEPROM_I2C_CLK          RCM_APB1_PERIPH_I2C2
 
 /*===========================================================================
  * 函数声明

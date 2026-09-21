@@ -41,7 +41,7 @@ set(MCU_FAMILY "APM32F1") # 这里改成 "APM32F1" 或 "APM32F4"
 set(MCU_MODEL "APM32F103CBT6")
 
 # 项目名称, 修改成项目编号
-project(huaweike C ASM)
+project(Y75_apm_can C ASM)
 
 # ==========================================
 # 生成器/编译器兼容性检查
