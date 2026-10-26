@@ -8,8 +8,6 @@
 #include "at24c04.h"
 #include "can_cmd.h"
 
-extern uint8_t ether_flag;
-
 /* ================================================================
  *  Internal helpers
  * ================================================================ */
@@ -244,6 +242,7 @@ void cmd_dispatch(const cmd_transport_t *tx, uint8_t cmd, const uint8_t *payload
 
     /* ---- 0x02  Start continuous send ---- */
     case RS485_CMD_START:
+        TMR_Enable(TMR2);
         g_sys.send_mode = tx->continuous_mode;
         tx_ack(tx, cmd);
         break;

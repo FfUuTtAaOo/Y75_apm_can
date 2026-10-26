@@ -10,6 +10,7 @@ static volatile uint8_t    g_rs485_rx_dma[RS485_RX_BUF_SIZE];
 static ringbuf_t           g_rs485_ring;
 static volatile uint8_t    g_rs485_ring_buf[RS485_RX_BUF_SIZE * 2]; /* larger to absorb bursts */
 static volatile uint8_t    g_rs485_rx_running;  /* DMA started flag    */
+static volatile uint8_t    g_rs485_ready;       /* rs485_init() 完成的标志 */
 
 /* ---- TX helpers ---- */
 
@@ -39,6 +40,7 @@ void rs485_init(USART_T * huart, rs485_frame_cb frame_cb)
     g_rs485_huart     = huart;
     g_rs485_frame_cb  = frame_cb;
     g_rs485_rx_running = 0;
+    g_rs485_ready      = 0;
 
     ringbuf_init(&g_rs485_ring, g_rs485_ring_buf, sizeof(g_rs485_ring_buf));
 
@@ -56,6 +58,9 @@ void rs485_init(USART_T * huart, rs485_frame_cb frame_cb)
     USART_EnableInterrupt(huart, USART_INT_RXBNE);
     USART_EnableInterrupt(huart, USART_INT_IDLE);
     NVIC_EnableIRQRequest(USART1_IRQn, 0, 0);
+
+    /* 全部状态就绪，ISR / 主循环此后才允许访问 ring buffer */
+    g_rs485_ready = 1;
 }
 
 /* ================================================================
@@ -67,7 +72,7 @@ void rs485_init(USART_T * huart, rs485_frame_cb frame_cb)
  * ================================================================ */
 int rs485_is_ready(void)
 {
-    return (g_rs485_huart != NULL);
+    return (g_rs485_ready != 0U);
 }
 
 /* ================================================================

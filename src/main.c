@@ -138,25 +138,23 @@ static void rs485_send_continuous(void)
         g_last_rs485_send_ms = g_tick_ms;
 
         if (g_sys.debug_mode == 0) {
-            if (output_interface == 1) {
-                /* Build data frame: AA 55 00 [SEQ4B] [6×float32] 0D 0A */
-                // uint32_t seq = g_sys.frame_seq++;
-                hex_buf_send[0] = RS485_CMD_CONT_DATA;
-                // hex_buf_send[1] = (uint8_t)(seq);
-                // hex_buf_send[2] = (uint8_t)(seq >> 8);
-                // hex_buf_send[3] = (uint8_t)(seq >> 16);
-                // hex_buf_send[4] = (uint8_t)(seq >> 24);
-                for (int i = 0; i < 6; i++) {
-                    float f = g_sensor.force[i];   /* read volatile once */
-                    uint32_t u; memcpy(&u, &f, 4);
-                    hex_buf_send[HEX_BUF_SEND_OFFSET + i * 4 + 0] = (uint8_t)(u);
-                    hex_buf_send[HEX_BUF_SEND_OFFSET + i * 4 + 1] = (uint8_t)(u >> 8);
-                    hex_buf_send[HEX_BUF_SEND_OFFSET + i * 4 + 2] = (uint8_t)(u >> 16);
-                    hex_buf_send[HEX_BUF_SEND_OFFSET + i * 4 + 3] = (uint8_t)(u >> 24);
-                }
-
-                rs485_send_raw(hex_buf_send, 24 + HEX_BUF_SEND_OFFSET);
+            /* Build data frame: AA 55 00 [SEQ4B] [6×float32] 0D 0A */
+            // uint32_t seq = g_sys.frame_seq++;
+            hex_buf_send[0] = RS485_CMD_CONT_DATA;
+            // hex_buf_send[1] = (uint8_t)(seq);
+            // hex_buf_send[2] = (uint8_t)(seq >> 8);
+            // hex_buf_send[3] = (uint8_t)(seq >> 16);
+            // hex_buf_send[4] = (uint8_t)(seq >> 24);
+            for (int i = 0; i < 6; i++) {
+                float f = g_sensor.force[i];   /* read volatile once */
+                uint32_t u; memcpy(&u, &f, 4);
+                hex_buf_send[HEX_BUF_SEND_OFFSET + i * 4 + 0] = (uint8_t)(u);
+                hex_buf_send[HEX_BUF_SEND_OFFSET + i * 4 + 1] = (uint8_t)(u >> 8);
+                hex_buf_send[HEX_BUF_SEND_OFFSET + i * 4 + 2] = (uint8_t)(u >> 16);
+                hex_buf_send[HEX_BUF_SEND_OFFSET + i * 4 + 3] = (uint8_t)(u >> 24);
             }
+
+            rs485_send_raw(hex_buf_send, 24 + HEX_BUF_SEND_OFFSET);
         } else if (g_sys.debug_mode == 1) {
             for (int i = 0; i < 6; i++) {
                 float f = g_sensor.force[i];   /* read volatile once */

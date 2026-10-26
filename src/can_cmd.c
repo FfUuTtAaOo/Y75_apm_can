@@ -19,8 +19,15 @@ volatile uint16_t g_can_id_cmd = 0x201;   /* 0x201，收命令 + 发应答 */
 
 /* ================================================================
  *  接收队列：中断只做入队，命令分发放在主循环
+ *
+ *  环形缓冲，CAN_RX_QUEUE_NUM 必须是 2 的幂（用掩码回绕）。
+ *  旧实现先自增 s_rx_head 再写 s_rxq[s_rx_head]，而 s_rx_head 是 uint8_t
+ *  自增到 255 才回绕 —— 从第 64 帧开始就一直写到数组外面（越界约 1.5KB），
+ *  会踩坏后面的全局变量；主循环里 s_rx_tail = s_rx_head 还会把中间的
+ *  帧全部跳过。改成标准环形缓冲：先判满，写当前槽位，再回绕推进。
  * ================================================================ */
-#define CAN_RX_QUEUE_NUM    64
+#define CAN_RX_QUEUE_NUM    64              /* 必须是 2 的幂 */
+#define CAN_RX_QUEUE_MASK   (CAN_RX_QUEUE_NUM - 1U)
 
 static uint8_t           s_rxq[CAN_RX_QUEUE_NUM][CAN_DATA_LENGTH];
 static volatile uint8_t  s_rx_head;   /* 中断写 */
@@ -28,12 +35,14 @@ static uint8_t           s_rx_tail;   /* 主循环读 */
 
 void can_rx_frame_isr(const uint8_t *data, uint8_t len)
 {
-    if (len > CAN_DATA_LENGTH) {
-        len = CAN_DATA_LENGTH;
-    }
-    s_rx_head++;
+    uint8_t next = (uint8_t)((s_rx_head + 1U) & CAN_RX_QUEUE_MASK);
 
+    (void)len;                              /* 固件永远收 8 字节帧 */
+    if (next == s_rx_tail) {
+        return;                             /* 队列满：丢这帧，绝不能覆盖未读数据 */
+    }
     memcpy(s_rxq[s_rx_head], data, CAN_DATA_LENGTH);
+    s_rx_head = next;
 }
 
 /* ================================================================
@@ -157,11 +166,11 @@ static const cmd_transport_t g_can_transport = {
 void can_cmd_process(void)
 {
     while (s_rx_tail != s_rx_head) {
-        s_rx_tail = s_rx_head;
         uint8_t frame[CAN_DATA_LENGTH];
         uint8_t cmd;
 
         memcpy(frame, (const void *)s_rxq[s_rx_tail], CAN_DATA_LENGTH);
+        s_rx_tail = (uint8_t)((s_rx_tail + 1U) & CAN_RX_QUEUE_MASK);
 
         cmd = frame[0];                            /* 命令码在第一个字节 */
 
